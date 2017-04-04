@@ -210,11 +210,84 @@ void win32InitTranslateKeys()
     s_translateKey[VK_KANJI] = Keyboard::Key::Kanji;
 }
 
+void win32ProcessInput(uint8_t* state, LPARAM lparam)
+{
+    // Adapted from https://blog.molecular-matters.com/2011/09/05/properly-handling-keyboard-input/
+
+    char inputBuffer[sizeof(RAWINPUT)];
+    UINT inputBufferSize = sizeof(inputBuffer);
+
+    GetRawInputData((HRAWINPUT)lparam, RID_INPUT, inputBuffer, &inputBufferSize, sizeof(RAWINPUTHEADER));
+
+    RAWINPUT* input = (RAWINPUT*)inputBuffer;
+
+    if (input->header.dwType != RIM_TYPEKEYBOARD) return;
+
+    const RAWKEYBOARD* rawKeyboard = &input->data.keyboard;
+
+    UINT vkey = rawKeyboard->VKey;
+    UINT flags = rawKeyboard->Flags;
+
+    // Fake key
+    if (255 == vkey)
+    {
+        return;
+    }
+    else if (vkey == VK_SHIFT) // Map VK_SHIFT to VK_LSHIFT or VK_RSHIFT
+    {
+        // MapVirtualKey maps left and right hand keys
+        // but can't map it with Control and Alt keys
+        vkey = MapVirtualKeyA(rawKeyboard->MakeCode, MAPVK_VSC_TO_VK_EX);
+    }
+
+    // Reference: https://www.win.tue.nl/~aeb/linux/kbd/scancodes-1.html
+    bool isE0 = (flags & RI_KEY_E0) != 0;
+
+    switch (vkey)
+    {
+    case VK_CONTROL: vkey = (isE0) ? VK_RCONTROL : VK_LCONTROL; break;
+    case VK_MENU: vkey = (isE0) ? VK_RMENU : VK_LMENU; break;
+        // the standard INSERT, DELETE, HOME, END, PRIOR and NEXT 
+        // keys will always have their e0 bit set, but the
+        // corresponding keys on the NUMPAD will not.
+    case VK_INSERT: vkey = (!isE0) ? VK_NUMPAD0 : VK_INSERT; break;
+    case VK_DELETE: vkey = (!isE0) ? VK_DECIMAL : VK_DELETE; break;
+    case VK_HOME: vkey = (!isE0) ? VK_NUMPAD7 : VK_HOME; break;
+    case VK_END: vkey = (!isE0) ? VK_NUMPAD1 : VK_END; break;
+    case VK_PRIOR: vkey = (!isE0) ? VK_NUMPAD9 : VK_PRIOR; break;
+    case VK_NEXT: vkey = (!isE0) ? VK_NUMPAD3 : VK_NEXT; break;
+        // the standard arrow keys will always have their e0 bit set, but the
+        // corresponding keys on the NUMPAD will not.
+    case VK_LEFT: vkey = (!isE0) ? VK_NUMPAD4 : VK_LEFT; break;
+    case VK_RIGHT: vkey = (!isE0) ? VK_NUMPAD6 : VK_RIGHT; break;
+    case VK_UP: vkey = (!isE0) ? VK_NUMPAD8 : VK_UP; break;
+    case VK_DOWN: vkey = (!isE0) ? VK_NUMPAD2 : VK_DOWN; break;
+    case VK_CLEAR: vkey = (!isE0) ? VK_NUMPAD5 : VK_CLEAR; break;
+    }
+
+    bool pressed = !((flags & RI_KEY_BREAK) != 0);
+
+    state[s_translateKey[vkey]] = pressed;
+}
+
 struct Input
 {
     uint8_t keyboardNewState[MAX_INPUT_KEYS];
     uint8_t keyboardOldState[MAX_INPUT_KEYS];
 };
+
+namespace hotswap
+{
+    bool inputIsKeyPressed(const Input* input, Keyboard::Key key)
+    {
+        return (~input->keyboardOldState[key] & input->keyboardNewState[key]) != 0;
+    }
+
+    bool inputIsKeyReleased(const Input* input, Keyboard::Key key)
+    {
+        return (input->keyboardOldState[key] & ~input->keyboardNewState[key]) != 0;
+    }
+}
 
 int WINAPI WinMain(HINSTANCE hInstance,
     HINSTANCE /* hPrevInstance */,
@@ -232,6 +305,8 @@ int WINAPI WinMain(HINSTANCE hInstance,
     {
         return 1;
     }
+
+    win32InitTranslateKeys();
 
     // Only keyboard for now
     RAWINPUTDEVICE inputDevices[1];
@@ -276,13 +351,23 @@ int WINAPI WinMain(HINSTANCE hInstance,
         {
             if (message.message == WM_INPUT)
             {
-                // Do something with input
+                win32ProcessInput(input.keyboardNewState, message.lParam);
             }
             else
             {
                 TranslateMessage(&message);
                 DispatchMessageA(&message);
             }
+        }
+
+
+        if (hotswap::inputIsKeyPressed(&input, hotswap::Keyboard::W))
+        {
+            OutputDebugStringA("W pressed\n");
+        }
+        else if (hotswap::inputIsKeyReleased(&input, hotswap::Keyboard::W))
+        {
+            OutputDebugStringA("W released\n");
         }
 
         // Update game board state
