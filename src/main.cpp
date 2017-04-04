@@ -19,6 +19,18 @@ static bool s_exit = false;
 #define MAX_INPUT_KEYS 256
 static uint8_t s_translateKey[MAX_INPUT_KEYS];
 
+static
+void memCopy(void* destination, const void* source, size_t numBytes)
+{
+    uint8_t* dst = (uint8_t*)destination;
+    const uint8_t* end = dst + numBytes;
+    const uint8_t* src = (const uint8_t*)source;
+
+    while (dst != end)
+    {
+        *dst++ = *src++;
+    }
+}
 
 LRESULT CALLBACK win32WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
@@ -27,68 +39,6 @@ LRESULT CALLBACK win32WindowProc(HWND window, UINT message, WPARAM wparam, LPARA
     case WM_CLOSE:
     {
         s_exit = true;
-    } break;
-
-    case WM_INPUT:
-    {
-        // Adapted from https://blog.molecular-matters.com/2011/09/05/properly-handling-keyboard-input/
-
-        char inputBuffer[sizeof(RAWINPUT)];
-        UINT inputBufferSize = sizeof(inputBuffer);
-
-        if (inputBufferSize != GetRawInputData(
-            (HRAWINPUT)lparam, RID_INPUT, inputBuffer, &inputBufferSize, sizeof(RAWINPUTHEADER)))
-        {
-            OutputDebugStringA("GetRawInputData did not return correct size\n");
-            break;
-        }
-
-        RAWINPUT* input = (RAWINPUT*)inputBuffer;
-
-        if (input->header.dwType != RIM_TYPEKEYBOARD) break;
-
-        const RAWKEYBOARD* rawKeyboard = &input->data.keyboard;
-
-        UINT vkey = rawKeyboard->VKey;
-        UINT flags = rawKeyboard->Flags;
-        
-        // Fake key
-        if (255 == vkey) 
-        {
-            break;
-        }
-        else if (vkey == VK_SHIFT) // Map VK_SHIFT to VK_LSHIFT or VK_RSHIFT
-        {
-            // MapVirtualKey maps left and right hand keys
-            // but can't map it with Control and Alt keys
-            vkey = MapVirtualKeyA(rawKeyboard->MakeCode, MAPVK_VSC_TO_VK_EX);
-        }
-
-        // Reference: https://www.win.tue.nl/~aeb/linux/kbd/scancodes-1.html
-        bool isE0 = (flags & RI_KEY_E0) != 0;
-        
-        switch (vkey)
-        {
-        case VK_CONTROL: vkey = (isE0) ? VK_RCONTROL : VK_LCONTROL; break;
-        case VK_MENU: vkey = (isE0) ? VK_RMENU : VK_LMENU; break;
-            // the standard INSERT, DELETE, HOME, END, PRIOR and NEXT 
-            // keys will always have their e0 bit set, but the
-            // corresponding keys on the NUMPAD will not.
-        case VK_INSERT: vkey = (!isE0) ? VK_NUMPAD0 : VK_INSERT; break;
-        case VK_DELETE: vkey = (!isE0) ? VK_DECIMAL : VK_DELETE; break;
-        case VK_HOME: vkey = (!isE0) ? VK_NUMPAD7 : VK_HOME; break;
-        case VK_END: vkey = (!isE0) ? VK_NUMPAD1 : VK_END; break;
-        case VK_PRIOR: vkey = (!isE0) ? VK_NUMPAD9 : VK_PRIOR; break;
-        case VK_NEXT: vkey = (!isE0) ? VK_NUMPAD3 : VK_NEXT; break;
-            // the standard arrow keys will always have their e0 bit set, but the
-            // corresponding keys on the NUMPAD will not.
-        case VK_LEFT: vkey = (!isE0) ? VK_NUMPAD4 : VK_LEFT; break;
-        case VK_RIGHT: vkey = (!isE0) ? VK_NUMPAD6 : VK_RIGHT; break;
-        case VK_UP: vkey = (!isE0) ? VK_NUMPAD8 : VK_UP; break;
-        case VK_DOWN: vkey = (!isE0) ? VK_NUMPAD2 : VK_DOWN; break;
-        case VK_CLEAR: vkey = (!isE0) ? VK_NUMPAD5 : VK_CLEAR; break;
-        }
-        
     } break;
 
     default:
@@ -260,6 +210,12 @@ void win32InitTranslateKeys()
     s_translateKey[VK_KANJI] = Keyboard::Key::Kanji;
 }
 
+struct Input
+{
+    uint8_t keyboardNewState[MAX_INPUT_KEYS];
+    uint8_t keyboardOldState[MAX_INPUT_KEYS];
+};
+
 int WINAPI WinMain(HINSTANCE hInstance,
     HINSTANCE /* hPrevInstance */,
     LPSTR /* lpCmdLine */, 
@@ -311,14 +267,26 @@ int WINAPI WinMain(HINSTANCE hInstance,
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
 
+    Input input = {};
+
     while (!s_exit)
     {
         MSG message;
         while (0 != PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
         {
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
+            if (message.message == WM_INPUT)
+            {
+                // Do something with input
+            }
+            else
+            {
+                TranslateMessage(&message);
+                DispatchMessageA(&message);
+            }
         }
+
+        // Update game board state
+        memCopy(input.keyboardOldState, input.keyboardNewState, sizeof(uint8_t) * MAX_INPUT_KEYS);
     }
 
     return 0;
