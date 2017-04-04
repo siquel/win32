@@ -3,6 +3,9 @@
 * License: https://github.com/siquel/win32/blob/master/LICENSE
 */
 
+#include "platform.h"
+#if HOTSWAP_PLATFORM_WIN32
+
 #include <Windows.h>
 
 static bool s_exit = false;
@@ -64,3 +67,5 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
     return 0;
 }
+
+#endif

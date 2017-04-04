@@ -15,6 +15,13 @@ solution "win32"
 
 	language "C++"
 
+	configuration "Debug"
+		defines {
+			"HOTSWAP_DEBUG=1"
+		}
+
+	configuration {}
+
 WIN32_DIR = path.getabsolute("..")
 local WIN32_BUILD_DIR = path.join(WIN32_DIR, ".build")
 local WIN32_THIRD_PARTY_DIR = path.join(WIN32_DIR, "3rdparty")
@@ -32,9 +39,9 @@ project "win32"
 		path.join(WIN32_DIR, "src/**.h")
 	}
 
-  flags {
-    "WinMain"
-  }
+	flags {
+	    "WinMain"
+	}
 
 	includedirs {
 		path.join(WIN32_DIR, "src")
