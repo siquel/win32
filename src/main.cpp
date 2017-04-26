@@ -14,6 +14,9 @@
 template<typename T, size_t N> char(&COUNTOF_REQUIRES_ARRAY_ARGUMENT(const T(&)[N]))[N];
 #define HOTSWAP_COUNTOF(x) sizeof(COUNTOF_REQUIRES_ARRAY_ARGUMENT(x))
 
+
+#define HOTSWAP_ASSERT(condition) if (!(condition)) { *(int*)0x0 = 0; }
+
 static bool s_exit = false;
 
 #define MAX_INPUT_KEYS 256
@@ -276,18 +279,33 @@ struct Input
     uint8_t keyboardOldState[MAX_INPUT_KEYS];
 };
 
+static Input s_input;
 namespace hotswap
 {
-    bool inputIsKeyPressed(const Input* input, Keyboard::Key key)
+    bool inputIsKeyPressed(Keyboard::Key key)
     {
-        return (~input->keyboardOldState[key] & input->keyboardNewState[key]) != 0;
+        return (~s_input.keyboardOldState[key] & s_input.keyboardNewState[key]) != 0;
     }
 
-    bool inputIsKeyReleased(const Input* input, Keyboard::Key key)
+    bool inputIsKeyReleased(Keyboard::Key key)
     {
-        return (input->keyboardOldState[key] & ~input->keyboardNewState[key]) != 0;
+        return (s_input.keyboardOldState[key] & ~s_input.keyboardNewState[key]) != 0;
+    }
+
+    bool inputIsKeyDown(Keyboard::Key key)
+    {
+        return s_input.keyboardNewState[key] != 0;
     }
 }
+
+struct State
+{
+    void* permanentStorage;
+    uint64_t permanentStorageSize;
+
+    void* transientStorage;
+    uint64_t transientStorageSize;
+};
 
 int WINAPI WinMain(HINSTANCE hInstance,
     HINSTANCE /* hPrevInstance */,
@@ -342,7 +360,20 @@ int WINAPI WinMain(HINSTANCE hInstance,
     ShowWindow(window, SW_SHOW);
     UpdateWindow(window);
 
-    Input input = {};
+    State memory = {};
+    memory.permanentStorageSize = 16 * 1024 * 1024;
+    memory.transientStorageSize = 512 * 1024 * 1024;
+
+#if HOTSWAP_DEBUG
+    void* baseAddress = (void*)uint64_t(2ULL * 1024ULL * 1024ULL * 1024ULL * 1024ULL);
+#else
+    void* baseAddress = (void*)0;
+#endif
+
+    uint64_t totalMemory = memory.permanentStorageSize + memory.transientStorageSize;
+
+    memory.permanentStorage = VirtualAlloc(baseAddress, totalMemory, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    memory.transientStorage = ((uint8_t*)memory.permanentStorage + memory.permanentStorageSize);
 
     while (!s_exit)
     {
@@ -351,7 +382,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
         {
             if (message.message == WM_INPUT)
             {
-                win32ProcessInput(input.keyboardNewState, message.lParam);
+                win32ProcessInput(s_input.keyboardNewState, message.lParam);
             }
             else
             {
@@ -360,18 +391,10 @@ int WINAPI WinMain(HINSTANCE hInstance,
             }
         }
 
-
-        if (hotswap::inputIsKeyPressed(&input, hotswap::Keyboard::W))
-        {
-            OutputDebugStringA("W pressed\n");
-        }
-        else if (hotswap::inputIsKeyReleased(&input, hotswap::Keyboard::W))
-        {
-            OutputDebugStringA("W released\n");
-        }
+        hotswap::gameUpdate();
 
         // Update game board state
-        memCopy(input.keyboardOldState, input.keyboardNewState, sizeof(uint8_t) * MAX_INPUT_KEYS);
+        memCopy(s_input.keyboardOldState, s_input.keyboardNewState, sizeof(uint8_t) * MAX_INPUT_KEYS);
     }
 
     return 0;

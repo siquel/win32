@@ -168,4 +168,11 @@ namespace hotswap
         };
     };
 
+    bool inputIsKeyPressed(Keyboard::Key key);
+
+    bool inputIsKeyDown(Keyboard::Key key);
+
+    bool inputIsKeyReleased(Keyboard::Key key);
+
+    void gameUpdate();
 }
