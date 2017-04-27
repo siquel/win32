@@ -6,6 +6,18 @@
 
 namespace hotswap
 {
+    struct GameInput
+    {
+        uint8_t state[4];
+        union
+        {
+            uint8_t w;
+            uint8_t a;
+            uint8_t s;
+            uint8_t d;
+        };
+    };
+
     struct Keyboard
     {
         enum Key
@@ -174,5 +186,7 @@ namespace hotswap
 
     bool inputIsKeyReleased(Keyboard::Key key);
 
-    void gameUpdate();
+    void engineUpdate();
+
+    typedef void(*game_update_t)(const GameInput* input);
 }

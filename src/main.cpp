@@ -312,6 +312,8 @@ int WINAPI WinMain(HINSTANCE hInstance,
     LPSTR /* lpCmdLine */, 
     int /* nCmdShow */ )
 {
+    using namespace hotswap;
+
     WNDCLASSEX wndClass = {};
     wndClass.cbSize = sizeof(WNDCLASSEX);
     wndClass.style = CS_HREDRAW | CS_VREDRAW;
@@ -375,6 +377,23 @@ int WINAPI WinMain(HINSTANCE hInstance,
     memory.permanentStorage = VirtualAlloc(baseAddress, totalMemory, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     memory.transientStorage = ((uint8_t*)memory.permanentStorage + memory.permanentStorageSize);
 
+    bool playing = false, recording = false;
+
+    HANDLE inputFile;
+
+    game_update_t gameUpdate;
+
+    HMODULE gamecode = LoadLibraryA("hotswapDebug.dll");
+
+    if (gamecode)
+    {
+        gameUpdate = (game_update_t)GetProcAddress(gamecode, "gameUpdate");
+    }
+    else
+    {
+        gameUpdate = [](const GameInput*) { OutputDebugStringA("No gamecode dll\n");  };
+    }
+
     while (!s_exit)
     {
         MSG message;
@@ -391,10 +410,81 @@ int WINAPI WinMain(HINSTANCE hInstance,
             }
         }
 
-        hotswap::gameUpdate();
+        if (hotswap::inputIsKeyPressed(hotswap::Keyboard::L))
+        {
+            if (playing && !recording)
+            {
+                playing = false;
+                OutputDebugStringA("Playing stopped\n");
+            }
+            else if (recording)
+            {
+                recording = false;
+                playing = true;
+
+                OutputDebugStringA("Playing started\n");
+            }
+            else
+            {
+                recording = true;
+                OutputDebugStringA("Recording started\n");
+
+                inputFile = ::CreateFileA("input",
+                    GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ,
+                    NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            }
+        }
+
+        GameInput input;
+
+        if (playing)
+        {
+            DWORD readBytes;
+            ::ReadFile(inputFile, &input, sizeof(GameInput), &readBytes, NULL);
+
+            if (0 == readBytes)
+            {
+                OutputDebugStringA("Looping recording\n");
+                ::SetFilePointer(inputFile, 0, 0, FILE_BEGIN);
+                ::ReadFile(inputFile, &input, sizeof(GameInput), &readBytes, NULL);
+            }
+        }
+        else
+        {
+            input.w = inputIsKeyDown(Keyboard::W);
+            input.a = inputIsKeyDown(Keyboard::A);
+            input.s = inputIsKeyDown(Keyboard::S);
+            input.d = inputIsKeyDown(Keyboard::D);
+
+            if (recording)
+            {
+                ::WriteFile(inputFile,
+                    &input,
+                    sizeof(GameInput),
+                    NULL,
+                    NULL);
+            }
+        }
+
+
+        if (playing)
+        {
+            char buffer[128];
+            wsprintfA(buffer, "W: %s, A: %s, S: %s, D: %s\n",
+                input.w ? "down" : "up",
+                input.a ? "down" : "up",
+                input.s ? "down" : "up",
+                input.d ? "down" : "up"
+                );
+
+            OutputDebugStringA(buffer);
+        }
 
         // Update game board state
         memCopy(s_input.keyboardOldState, s_input.keyboardNewState, sizeof(uint8_t) * MAX_INPUT_KEYS);
+
+        gameUpdate(&input);
+        ::Sleep(100);
     }
 
     return 0;
