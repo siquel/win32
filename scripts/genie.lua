@@ -85,3 +85,7 @@ project "hotswap"
 	includedirs {
 		path.join(WIN32_DIR, "src")
 	}
+
+	linkoptions {
+		"/PDB:\"$(OutDir)$(TargetName)-$([System.DateTime]::Now.ToString(\"HH_mm_ss_fff\")).pdb\""
+	}

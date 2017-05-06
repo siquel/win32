@@ -381,21 +381,63 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
     HANDLE inputFile;
 
-    game_update_t gameUpdate;
+    game_update_t gameUpdate = NULL;
 
-    HMODULE gamecode = LoadLibraryA("hotswapDebug.dll");
+    const char* gameCodeDllFileName = "hotswapDebug.dll";
+    const char* gameCodeTempDllFilename = "hotswapDebug_temp.dll";
 
-    if (gamecode)
+    FILETIME lastWriteTime = {};
+    HMODULE gamecode = 0;
+
+#if HOTSWAP_DEBUG
+    SetCurrentDirectoryA("../../win64_vs2015/bin");
+
+    char pwd[MAX_PATH] = {};
+    GetCurrentDirectoryA(sizeof(pwd), pwd);
+
+    OutputDebugStringA(pwd);
+#endif
+
+    if (CopyFile(gameCodeDllFileName, gameCodeTempDllFilename, FALSE))
     {
-        gameUpdate = (game_update_t)GetProcAddress(gamecode, "gameUpdate");
-    }
-    else
-    {
-        gameUpdate = [](const GameInput*) { OutputDebugStringA("No gamecode dll\n");  };
+        gamecode = LoadLibraryA(gameCodeTempDllFilename);
+
+        if (gamecode)
+        {
+            gameUpdate = (game_update_t)GetProcAddress(gamecode, "gameUpdate");
+            WIN32_FILE_ATTRIBUTE_DATA data;
+            if (GetFileAttributesExA(gameCodeDllFileName, GetFileExInfoStandard, &data))
+            {
+                lastWriteTime = data.ftLastWriteTime;
+            }
+        }
     }
 
     while (!s_exit)
     {
+        WIN32_FILE_ATTRIBUTE_DATA data;
+        if (GetFileAttributesExA(gameCodeDllFileName, GetFileExInfoStandard, &data))
+        {
+            FILETIME currentWriteTime = data.ftLastWriteTime;
+            
+            if (-1 == CompareFileTime(&lastWriteTime, &currentWriteTime))
+            {
+                FreeLibrary(gamecode);
+                gameUpdate = NULL;
+
+                if (CopyFile(gameCodeDllFileName, gameCodeTempDllFilename, FALSE))
+                {
+                    gamecode = LoadLibraryA(gameCodeTempDllFilename);
+                    gameUpdate = (game_update_t)GetProcAddress(gamecode, "gameUpdate");
+
+                    lastWriteTime = currentWriteTime;
+
+                    OutputDebugStringA("Loaded new game code\n");
+                }
+            }
+        }
+
+
         MSG message;
         while (0 != PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
         {
@@ -483,7 +525,10 @@ int WINAPI WinMain(HINSTANCE hInstance,
         // Update game board state
         memCopy(s_input.keyboardOldState, s_input.keyboardNewState, sizeof(uint8_t) * MAX_INPUT_KEYS);
 
-        gameUpdate(&input);
+        if (gameUpdate != NULL)
+        {
+            gameUpdate(&input);
+        }
         ::Sleep(100);
     }
 

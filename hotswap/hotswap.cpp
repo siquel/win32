@@ -13,6 +13,6 @@ namespace hotswap
     void gameUpdate(const GameInput* input)
     {
         (void)input;
-        OutputDebugStringA("Hello from DLL!\n");
+        OutputDebugStringA("Changeffs to DLL!\n");
     }
 }
